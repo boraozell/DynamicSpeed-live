@@ -1,8 +1,14 @@
 name: DynamicSpeed - Uzun SUMO deneyi
+run-name: "DS-${{ inputs.request_id }} | ${{ inputs.demand }} arac/saat | ${{ inputs.duration }} dk"
 
 on:
   workflow_dispatch:
     inputs:
+      request_id:
+        description: "Site entegrasyonu deney kimligi (elle calistirmada bos kalabilir)"
+        required: false
+        type: string
+        default: ""
       demand:
         description: "Trafik talebi (arac/saat)"
         required: true
@@ -92,5 +98,5 @@ jobs:
             actions_results/summary.csv
             actions_results/run_manifest.json
             actions_results/error.txt
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
