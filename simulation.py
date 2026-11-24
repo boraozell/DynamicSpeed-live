@@ -140,7 +140,8 @@ def run_policy(folder: Path, net: Path, route: Path, *, demand: int, weather: st
     try:
         for step in range(1,duration_s+1):
             traci.simulationStep()
-            if step % 5 == 0: assert_memory_safe()
+            # Do not terminate runs based on cgroup memory.current: it includes file cache.
+            # Free-tier safety is enforced by request duration and a single worker.
             counts={e:traci.edge.getLastStepVehicleNumber(e) for e in accum}
             for e,num in counts.items():accum[e]+=num
             n=counts[SENSOR]
