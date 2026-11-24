@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends sumo sumo-tools
 WORKDIR /srv/dynamicspeed
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app ./app
+COPY main.py simulation.py __init__.py ./app/
 COPY index.html ./index.html
 EXPOSE 8000
 CMD ["sh","-c","uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
