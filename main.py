@@ -110,4 +110,4 @@ def get_result(job_id:str):
 
 @app.get('/simulator',response_class=HTMLResponse)
 def simulator():
-    return HTMLResponse((ROOT/'app'/'simulator.html').read_text(encoding='utf-8'),headers={'Cache-Control':'no-store'})
+    return HTMLResponse((ROOT/'simulator.html').read_text(encoding='utf-8'),headers={'Cache-Control':'no-store'})
