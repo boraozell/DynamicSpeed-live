@@ -12,7 +12,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from .simulation import POLICIES, WEATHER, execute_job
+from .simulation import POLICIES, WEATHER, execute_job, container_memory
 
 ROOT=Path(__file__).resolve().parent.parent
 HTML=ROOT/'index.html'
@@ -36,6 +36,9 @@ class SimulationRequest(BaseModel):
     policies:list[Literal['static','rule','mpc','weather_rule']]=Field(default_factory=lambda:['static','rule'])
     @model_validator(mode='after')
     def validate_policies(self):
+        allowed=int(os.environ.get('DS_MAX_DURATION_MINUTES','15'))
+        if self.duration_minutes>allowed:
+            raise ValueError(f'Bu ücretsiz sunucuda en fazla {allowed} dakikalık deney destekleniyor. Daha uzun koşular için yüksek RAM gerekir.')
         if not 2<=len(self.policies)<=2 or len(self.policies)!=len(set(self.policies)):
             raise ValueError('2 veya 3 farklı kontrolcü seçilmelidir')
         return self
@@ -47,8 +50,16 @@ def index():
 @app.get('/api/health')
 def health():
     import shutil
-    return {'ok':True,'sumo':bool(shutil.which('sumo')),'netconvert':bool(shutil.which('netconvert')),
-            'queued_or_running':sum(x['status'] in ('queued','running') for x in jobs.values())}
+    used, maximum = container_memory()
+    return {
+        'ok': True,
+        'sumo': bool(shutil.which('sumo')),
+        'netconvert': bool(shutil.which('netconvert')),
+        'queued_or_running': sum(j['status'] in ('queued', 'running') for j in jobs.values()),
+        'memory_used_mb': round(used / 1024**2) if used is not None else None,
+        'memory_limit_mb': round(maximum / 1024**2) if maximum is not None else None,
+        'max_duration_minutes': int(os.environ.get('DS_MAX_DURATION_MINUTES', '15')),
+    }
 
 def safe_job_id(job_id:str):
     try: return str(uuid.UUID(job_id))

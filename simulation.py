@@ -14,6 +14,27 @@ import json
 import gc
 from typing import Callable
 
+# Read Linux container cgroup memory usage; stop simulations before OOM kills API.
+# This is a guard, not a way to increase Render Free RAM.
+def container_memory():
+    try:
+        cur=int(Path("/sys/fs/cgroup/memory.current").read_text().strip())
+        raw=Path("/sys/fs/cgroup/memory.max").read_text().strip()
+        maximum=None if raw=="max" else int(raw)
+        return cur, maximum
+    except (OSError,ValueError):
+        return None, None
+
+def assert_memory_safe():
+    current, maximum=container_memory()
+    if current is None or maximum is None or maximum>1024**3:
+        return
+    ratio=float(os.environ.get("DS_MEMORY_GUARD_RATIO","0.83"))
+    if current > maximum*ratio:
+        raise RuntimeError(
+          f"Sunucu RAM sınırına yaklaştı ({current/1024**2:.0f}/{maximum/1024**2:.0f} MB). "
+          "Simülasyon güvenli biçimde durduruldu. Süreyi veya araç sayısını azaltın.")
+
 WEATHER = {
     'dry': {'tau': 1.1, 'decel': 4.5, 'accel': 2.6, 'speedFactor': 1.0, 'cap': 100, 'label': 'Kuru yol'},
     'light_rain': {'tau': 1.4, 'decel': 3.8, 'accel': 2.4, 'speedFactor': .95, 'cap': 90, 'label': 'Hafif yağmur'},
@@ -119,6 +140,7 @@ def run_policy(folder: Path, net: Path, route: Path, *, demand: int, weather: st
     try:
         for step in range(1,duration_s+1):
             traci.simulationStep()
+            if step % 5 == 0: assert_memory_safe()
             counts={e:traci.edge.getLastStepVehicleNumber(e) for e in accum}
             for e,num in counts.items():accum[e]+=num
             n=counts[SENSOR]
