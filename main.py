@@ -5,6 +5,7 @@ import os
 import threading
 import uuid
 import time
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Literal
@@ -21,20 +22,21 @@ MAX_ACTIVE=int(os.environ.get('DS_MAX_QUEUED','3'))
 MAX_HISTORY=int(os.environ.get('DS_MAX_HISTORY','12'))
 MAX_REQUESTS_PER_HOUR=int(os.environ.get('DS_MAX_REQUESTS_PER_HOUR','3'))
 executor=ThreadPoolExecutor(max_workers=1)
+logger=logging.getLogger("dynamicspeed")
 jobs:dict[str,dict]={}
 requests:dict[str,list[float]]={}
 lock=threading.Lock()
 app=FastAPI(title='DynamicSpeed Live SUMO API',version='43.0')
 
 class SimulationRequest(BaseModel):
-    demand:int=Field(default=2600,ge=1200,le=4200,multiple_of=100)
+    demand:int=Field(default=600,ge=400,le=1800,multiple_of=100)
     weather:Literal['dry','light_rain','heavy_rain']='dry'
-    duration_minutes:Literal[30,60,90]=30
+    duration_minutes:Literal[10,15,30]=10
     seed:int=Field(default=314,ge=1,le=999999)
     policies:list[Literal['static','rule','mpc','weather_rule']]=Field(default_factory=lambda:['static','rule'])
     @model_validator(mode='after')
     def validate_policies(self):
-        if not 2<=len(self.policies)<=3 or len(self.policies)!=len(set(self.policies)):
+        if not 2<=len(self.policies)<=2 or len(self.policies)!=len(set(self.policies)):
             raise ValueError('2 veya 3 farklı kontrolcü seçilmelidir')
         return self
 
@@ -69,6 +71,7 @@ def worker(job_id:str,params:dict):
         result_path.write_text(json.dumps(result,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
         with lock:jobs[job_id].update({'status':'completed','progress':100,'message':'Simülasyon tamamlandı'})
     except Exception as exc:
+        logger.exception('Simulation failed, job=%s',job_id)
         with lock:jobs[job_id].update({'status':'error','message':str(exc)[:350]})
 
 @app.post('/api/simulations',status_code=202)

@@ -11,6 +11,7 @@ import os
 import subprocess
 import xml.etree.ElementTree as ET
 import json
+import gc
 from typing import Callable
 
 WEATHER = {
@@ -106,9 +107,12 @@ def run_policy(folder: Path, net: Path, route: Path, *, demand: int, weather: st
     summ=folder/'summary.xml'
     cmd=['sumo','-n',str(net),'-r',str(route),'--summary',str(summ),
          '--no-step-log','true','--duration-log.disable','true','--seed',str(seed),
-         '--time-to-teleport','-1','--end',str(duration_s)]
-    # Each call is serialized in our worker; TraCI uses local port without public exposure.
-    traci.start(cmd,port=None)
+         '--end',str(duration_s)]
+    # Small/free-instance configuration: teleport extremely stalled cars to avoid
+    # unbounded queue accumulation; this CHANGES model semantics vs research runs.
+    cmd += ['--time-to-teleport', '300']
+    # Fail with SUMO stderr, not a generic connection-refused loop, where possible.
+    traci.start(cmd, port=None, numRetries=3)
     current_limit=100; changes=0.; decisions=[]; frames=[]; timeline=[]
     accum={f'e{i}':0. for i in range(4)}
     speed_n=0.; speed_weight=0.
@@ -122,7 +126,7 @@ def run_policy(folder: Path, net: Path, route: Path, *, demand: int, weather: st
                 speed=traci.edge.getLastStepMeanSpeed(SENSOR)*3.6
                 if math.isfinite(speed) and speed >= 0:
                     speed_n+=n;speed_weight+=n*speed
-            if step%30==0 or step==1:
+            if step%60==0 or step==1:
                 # Each observed car is in a SUMO lane, not a fabricated visual distribution.
                 vehicles=[]; speeds=[]; slow=0
                 for i in range(6):
@@ -134,7 +138,8 @@ def run_policy(folder: Path, net: Path, route: Path, *, demand: int, weather: st
                             kmh=traci.vehicle.getSpeed(vid)*3.6
                         except traci.TraCIException:
                             continue
-                        vehicles.append([round(x,1),int(lane),round(kmh,1)])
+                        if len(vehicles) < 400:
+                            vehicles.append([round(x,1),int(lane),round(kmh,1)])
                         speeds.append(kmh)
                         if kmh<20:slow+=1
                 frames.append({'time_s':step,'limit_kmh':current_limit,'vehicles':vehicles,
@@ -160,7 +165,9 @@ def run_policy(folder: Path, net: Path, route: Path, *, demand: int, weather: st
                 accum={e:0. for e in accum};speed_n=0.;speed_weight=0.
                 if report:report(step/duration_s)
     finally:
-        traci.close()
+        try: traci.close()
+        except Exception: pass
+        gc.collect()
     # Keep runner's vehicle-hour definition identical to notebook 12.
     hours=0.; final=None
     for _, elem in ET.iterparse(summ,events=('end',)):
@@ -197,6 +204,6 @@ def execute_job(workdir: Path, params:dict, progress:Callable[[float,str],None])
     progress(1.,'Tamamlandı')
     return {'config':params,'metadata':{
       'synthetic_network':'6 km, 3→1→3 şerit','demand_injection_end_minutes':injection_end_s/60.,
-      'sample_interval_seconds':30,'control_interval_seconds':60,
-      'scope':'Synthetic research simulation; not road-calibrated; no safety predictions'},
+      'sample_interval_seconds':60,'control_interval_seconds':60,
+      'scope':'Synthetic low-memory demonstration. 300s teleport enabled; results are NOT directly comparable to previous no-teleport research runs. Not road-calibrated.'},
       'runs':outcomes}
