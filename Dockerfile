@@ -6,5 +6,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py simulation.py __init__.py ./app/
 COPY index.html ./index.html
+COPY simulator.html ./simulator.html
 EXPOSE 8000
 CMD ["sh","-c","uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
