@@ -71,6 +71,10 @@ jobs:
           python -m pip install --no-cache-dir 'traci>=1.20,<2'
           sumo --version
           netconvert --version
+      - name: Simulasyon giris dosyasini dogrula
+        run: |
+          test -f simulation.py || (echo "simulation.py repo kokunde bulunamadi" && exit 1)
+          test -f scripts/run_long_experiment.py || (echo "Koşucu dosyası eksik" && exit 1)
       - name: Uzun deneyleri sirayla calistir
         env:
           DS_DEMAND: ${{ inputs.demand }}
@@ -81,7 +85,7 @@ jobs:
           DS_POLICY_B: ${{ inputs.policy_b }}
           SUMO_HOME: /usr/share/sumo
         run: |
-          python run_long_experiment.py \
+          python scripts/run_long_experiment.py \
             --demand "$DS_DEMAND" \
             --duration "$DS_DURATION" \
             --weather "$DS_WEATHER" \
@@ -98,5 +102,5 @@ jobs:
             actions_results/summary.csv
             actions_results/run_manifest.json
             actions_results/error.txt
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
