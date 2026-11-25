@@ -60,22 +60,21 @@ jobs:
     steps:
       - name: Kaynak kodu al
         uses: actions/checkout@v4
-      - name: Python kur
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: SUMO ve TraCI kur
+
+      - name: SUMO Docker imajini indir (zaman olcumu)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends sumo sumo-tools
-          python -m pip install --no-cache-dir 'traci>=1.20,<2'
-          sumo --version
-          netconvert --version
+          t0=$SECONDS
+          docker pull ghcr.io/eclipse-sumo/sumo:1.28.0
+          echo "DS_IMAGE_PULL_SECONDS=$((SECONDS-t0))" >> "$GITHUB_ENV"
+          echo "Image pull: $((SECONDS-t0)) seconds"
+
       - name: Simulasyon giris dosyasini dogrula
         run: |
           test -f simulation.py || (echo "simulation.py repo kokunde bulunamadi" && exit 1)
-          test -f scripts/run_long_experiment.py || (echo "Koşucu dosyası eksik" && exit 1)
-      - name: Uzun deneyleri sirayla calistir
+          test -f scripts/run_long_experiment.py || (echo "scripts/run_long_experiment.py dosyasi eksik" && exit 1)
+          docker run --rm ghcr.io/eclipse-sumo/sumo:1.28.0 sh -lc 'command -v sumo && command -v netconvert && command -v python3 && python3 -c "import traci; print(\"TraCI OK\")"'
+
+      - name: Uzun deneyleri sirayla calistir (Docker)
         env:
           DS_DEMAND: ${{ inputs.demand }}
           DS_DURATION: ${{ inputs.duration }}
@@ -83,15 +82,25 @@ jobs:
           DS_SEED: ${{ inputs.seed }}
           DS_POLICY_A: ${{ inputs.policy_a }}
           DS_POLICY_B: ${{ inputs.policy_b }}
-          SUMO_HOME: /usr/share/sumo
         run: |
-          python scripts/run_long_experiment.py \
-            --demand "$DS_DEMAND" \
-            --duration "$DS_DURATION" \
-            --weather "$DS_WEATHER" \
-            --seed "$DS_SEED" \
-            --policy-a "$DS_POLICY_A" \
-            --policy-b "$DS_POLICY_B"
+          t0=$SECONDS
+          # Same simulation.py and runner as v54; only the SUMO execution environment changes.
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env DS_DEMAND --env DS_DURATION --env DS_WEATHER \
+            --env DS_SEED --env DS_POLICY_A --env DS_POLICY_B \
+            --env GITHUB_SHA --env RUNNER_NAME \
+            ghcr.io/eclipse-sumo/sumo:1.28.0 \
+            sh -lc 'python3 scripts/run_long_experiment.py \
+              --demand "$DS_DEMAND" \
+              --duration "$DS_DURATION" \
+              --weather "$DS_WEATHER" \
+              --seed "$DS_SEED" \
+              --policy-a "$DS_POLICY_A" \
+              --policy-b "$DS_POLICY_B"'
+          echo "Simulation: $((SECONDS-t0)) seconds; image pull: ${DS_IMAGE_PULL_SECONDS:-unknown} seconds"
+
       - name: Sonuclari indirilebilir dosya olarak sakla
         if: always()
         uses: actions/upload-artifact@v4
